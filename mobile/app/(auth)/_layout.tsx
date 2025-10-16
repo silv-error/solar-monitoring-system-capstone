@@ -3,13 +3,20 @@ import React from "react";
 import { Redirect, Stack } from "expo-router";
 
 const AuthLayout = () => {
-  const isSignedIn = false;
+  const isSignedIn = true;
 
-  if (!isSignedIn) {
-    return <Redirect href={"/(tabs)"} />;
-  }
+  // * IF USER IS SIGNED IN, REDIRECT TO TABS
+  // if (!isSignedIn) {
+  //   return <Redirect href={"/(tabs)"} />;
+  // }
 
-  return <Stack />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+      }}
+    />
+  );
 };
 
 export default AuthLayout;

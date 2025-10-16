@@ -1,4 +1,4 @@
-import { Button, ImageBackground, Text, TouchableOpacity, View } from "react-native";
+import { ImageBackground, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient"; // or from 'react-native-linear-gradient'
 import { images } from "@/constants/images"; // Ensure this path is correct
 import { useRouter } from "expo-router";

@@ -3,13 +3,16 @@ import { Redirect, Tabs } from "expo-router";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { View, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const TabsLayout = () => {
-  const isSignedIn = true;
+  const isSignedIn = false;
+  const insets = useSafeAreaInsets();
 
-  if (!isSignedIn) {
-    return <Redirect href={"/(auth)"} />;
-  }
+  // * IF USER IS NOT SIGNED IN, REDIRECT TO AUTH
+  // if (!isSignedIn) {
+  //   return <Redirect href={"/(auth)"} />;
+  // }
 
   return (
     <LinearGradient colors={["rgba(0,0,0,0.8)", "rgba(0,0,0,0.4)"]} className="flex-1">
@@ -18,12 +21,13 @@ const TabsLayout = () => {
           screenOptions={{
             headerShown: false,
             tabBarStyle: {
-              backgroundColor: "rgba(255, 255, 255, 0.1)",
+              backgroundColor: "#1F2937",
               borderTopWidth: 0,
               position: "absolute",
               bottom: 0,
               left: 0,
               right: 0,
+              padding: 4,
               borderRadius: 20,
               paddingVertical: 10,
               paddingHorizontal: 20,
@@ -31,6 +35,7 @@ const TabsLayout = () => {
               shadowOffset: { width: 0, height: -2 },
               shadowOpacity: 0.3,
               shadowRadius: 6,
+              height: insets.bottom + 50,
             },
             tabBarActiveTintColor: "#4ADE80",
             tabBarInactiveTintColor: "#ffffff",
