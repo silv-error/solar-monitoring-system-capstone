@@ -1,18 +1,49 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Redirect, Tabs } from "expo-router";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { View, Text } from "react-native";
+import { View, Text, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { supabase } from "../supabase";
+import { Session } from "@supabase/supabase-js";
 
 const TabsLayout = () => {
-  const isSignedIn = false;
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
   const insets = useSafeAreaInsets();
 
-  // * IF USER IS NOT SIGNED IN, REDIRECT TO AUTH
-  // if (!isSignedIn) {
-  //   return <Redirect href={"/(auth)"} />;
-  // }
+  useEffect(() => {
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Show loading indicator while checking auth state
+  if (loading) {
+    return (
+      <View className="flex-1 bg-slate-900 justify-center items-center">
+        <ActivityIndicator size="large" color="#4ADE80" />
+        <Text className="text-white mt-4">Loading...</Text>
+      </View>
+    );
+  }
+
+  // If user is not signed in, redirect to auth
+  if (!session) {
+    return <Redirect href={"/(auth)"} />;
+  }
 
   return (
     <LinearGradient colors={["rgba(0,0,0,0.8)", "rgba(0,0,0,0.4)"]} className="flex-1">
