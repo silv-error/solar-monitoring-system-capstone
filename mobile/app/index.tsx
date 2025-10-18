@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient"; // or from 'react-native-
 import { images } from "@/constants/images"; // Ensure this path is correct
 import { useRouter } from "expo-router";
 
+
 export default function Index() {
   const route = useRouter();
 
