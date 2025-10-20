@@ -68,7 +68,7 @@ const TabsLayout = () => {
               shadowRadius: 6,
               height: insets.bottom + 50,
             },
-            tabBarActiveTintColor: "#4ADE80",
+            tabBarActiveTintColor: "#9ACD32",
             tabBarInactiveTintColor: "#ffffff",
           }}
         >

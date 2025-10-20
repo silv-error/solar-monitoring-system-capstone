@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, use } from "react";
 import {
   View,
   Text,
@@ -11,21 +11,23 @@ import {
   Alert,
   Modal,
   Pressable,
+  Animated,
+  Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { PieChart } from "react-native-chart-kit";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../supabase";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 export default function SolarMonitoringApp() {
   const [hours, setHours] = useState("");
   const [currentWorkingHours, setCurrentWorkingHours] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [loadingStats, setLoadingStats] = useState(false);
-  const [stats, setStats] = useState({ remaining_s: "0", mode: "Go" });
-  const [modeColor, setModeColor] = useState("bg-emerald-500");
+  const [stats, setStats] = useState({ remaining_s: "0", mode: "IDLE", remaining_percent: 0});
+  const [modeColor, setModeColor] = useState("bg-lime-500");
 
   // Modal
   const [modalVisible, setModalVisible] = useState(false);
@@ -67,8 +69,15 @@ export default function SolarMonitoringApp() {
     },
   ]);
 
-  const handleSubmit = async () => {
+  const tempFeedback = async () => {
     setSubmitted(true);
+    setTimeout(() => {
+      setSubmitted(false);
+    }, 5000)
+  }
+
+  const handleSubmit = async () => {
+    tempFeedback()
     setLoadingStats(true);
 
     try {
@@ -84,10 +93,11 @@ export default function SolarMonitoringApp() {
     } finally {
       setLoadingStats(false);
     }
+
   };
 
   const handleReset = async () => {
-
+    tempFeedback()
     try {
       const res = await fetch("http://192.168.100.187/run", {
         method: "POST",
@@ -110,7 +120,8 @@ export default function SolarMonitoringApp() {
         const res = await fetch("http://192.168.100.187/status");
         const data = await res.json();
 
-        setStats({ remaining_s: data.remaining_s, mode: data.mode });
+        console.log(data)
+        setStats({ remaining_s: data.remaining_s, mode: data.mode, remaining_percent: data.remaining_percent });
 
         // Only show modal once per new alternating alert
         if (data.mode === "WARN") {
@@ -133,9 +144,28 @@ export default function SolarMonitoringApp() {
     return () => clearInterval(interval);
   }, []);
 
+  const [solarKw, setSolarKw] = useState(0);
+  const [maxKw, setMaxKw] = useState(0);
+  useEffect(() => {
+    const useFetchSolar = async () => {
+      try {
+        const res = await fetch("http://192.168.100.187/solar")
+        const data = await res.json();
+        console.log("kW Data:", data)
+        setSolarKw(data.start_w);
+        setMaxKw(data.value_w);
+      } catch (error) {
+        console.error("Error fetching kW stats:", error);
+      }
+    }
+    setInterval(() => {
+      useFetchSolar();
+    }, 2000)
+  }, [])
+
   // Mode color update
   useEffect(() => {
-    if (stats.mode === "Go") setModeColor("bg-emerald-500/40");
+    if (stats.mode === "GO" || stats.mode === "IDLE") setModeColor("bg-lime-500/40");
     else if (stats.mode === "WARN") setModeColor("bg-yellow-500/40");
     else setModeColor("bg-red-500/40");
   }, [stats.mode]);
@@ -154,12 +184,64 @@ export default function SolarMonitoringApp() {
       Alert.alert("Error", "Failed to logout");
     }
   };
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let pulse: any;
+
+    if (modalVisible) {
+      pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scale, {
+            toValue: 1.3,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(scale, {
+            toValue: 1,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+    }
+
+    return () => {
+      if (pulse) pulse.stop();
+    };
+  }, [modalVisible]);
+
+  // 1️⃣ Create the animated value once
+const animatedWidth = useRef(new Animated.Value(0)).current;
+
+  // Animate solar bar width — matches solarKw max, shrinks based on remaining_percent
+  useEffect(() => {
+    if (typeof solarKw === "number" && typeof stats.remaining_percent === "number") {
+      // 1️⃣ Normalize solar output (solarKw = 100%)
+      const maxOutputPercent = Math.min((solarKw / 400) * 100, 100);
+
+      // 2️⃣ Shrink proportionally to remaining battery
+      const adjustedPercent = (maxOutputPercent * stats.remaining_percent) / 100;
+
+      // 3️⃣ Smooth animation
+      Animated.timing(animatedWidth, {
+        toValue: adjustedPercent,
+        duration: 1000,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [solarKw, stats.remaining_percent]);
+
 
   const insets = useSafeAreaInsets();
 
   return (
     <SafeAreaView className="flex-1">
-      <ScrollView className="flex-1 bg-slate-900">
+      <ScrollView className="flex-1 bg-black">
         {/* -------- Modal -------- */}
         <Modal
           animationType="fade"
@@ -175,13 +257,13 @@ export default function SolarMonitoringApp() {
                   isWarning ? "bg-amber-500/20" : "bg-rose-500/20"
                 }`}
               >
-                <Ionicons
-                  name={
-                    isWarning ? "warning-outline" : "alert-circle-outline"
-                  }
-                  size={32}
-                  color={isWarning ? "#F59E0B" : "#EF4444"}
-                />
+                <Animated.View style={{ transform: [{ scale }] }}>
+      <Ionicons
+        name={isWarning ? "warning-outline" : "alert-circle-outline"}
+        size={40}
+        color={isWarning ? "#F59E0B" : "#EF4444"}
+      />
+    </Animated.View>
               </View>
 
               {/* Title */}
@@ -190,7 +272,7 @@ export default function SolarMonitoringApp() {
                   isWarning ? "text-amber-400" : "text-rose-400"
                 }`}
               >
-                {isWarning ? "Warning" : "Empty Field"}
+                {isWarning ? "Warning" : "Low Battery"}
               </Text>
 
               {/* Message */}
@@ -213,34 +295,78 @@ export default function SolarMonitoringApp() {
           </View>
         </Modal>
 
+        <Modal
+  animationType="fade"
+  transparent={true}
+  visible={stats.mode === "EMERGENCY"}
+  onRequestClose={() => setModalVisible(false)}
+>
+  <View className="flex-1 justify-center items-center bg-black/80">
+    <View className="bg-red-900 rounded-3xl p-8 items-center border-2 border-red-600 w-[85%] shadow-2xl shadow-red-900/70">
+      {/* Emergency Icon with pulse */}
+      <Animated.View
+        style={{ transform: [{ scale }], marginBottom: 20 }}
+      >
+        <Ionicons
+          name="alert-circle"
+          size={60}
+          color="#FF4C4C"
+        />
+      </Animated.View>
+
+      {/* Title */}
+      <Text className="text-2xl font-extrabold text-red-400 mb-4 text-center">
+        EMERGENCY
+      </Text>
+
+      {/* Message */}
+      <Text className="text-center text-red-200 text-base mb-8 leading-relaxed font-semibold">
+        Critical solar energy drop detected.{"\n"}
+        Please take immediate action!
+      </Text>
+
+      {/* Action Button */}
+      <Pressable
+        onPress={() => {}}
+        className="bg-red-600 px-8 py-3 rounded-full active:opacity-80"
+      >
+        <Text className="text-white font-bold text-lg">Understood</Text>
+      </Pressable>
+    </View>
+  </View>
+</Modal>
+
+
         {/* -------- MAIN CONTENT -------- */}
         <StatusBar style="light" />
         <LinearGradient
-          colors={["rgba(0,0,0,0.2)", "rgba(0,0,0,0.8)"]}
-          className="flex-1 p-6 justify-center"
+          colors={["rgba(0,0,0,0.9)","rgba(0,0,0,0.9)",`${stats.mode === "GO" ? "rgba(34,197,94,0.6)" : stats.mode === "IDLE" ? "rgba(34,197,94,0.6)" : stats.mode === "WARN" ? "rgba(234,179,8,0.6)" : "rgba(239,68,68,0.6)"  }`]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1.4 }}
+          className="flex-1 h-screen p-6 justify-center"
         >
           {/* Header */}
-          <View className="items-center mt-20 mb-4">
+          <View className="items-left pt-10 mt-20">
             <TouchableOpacity
               onPress={handleLogout}
               className="rounded-xl px-4 py-2 mt-4 absolute -top-16 -right-4"
             >
               <Ionicons name="log-out-outline" size={20} color="red" />
             </TouchableOpacity>
-            <Text className="text-3xl font-bold text-white mb-1">
-              Solar Flow
+            <Text className="text-4xl font-bold text-white">
+              Good Morning!
             </Text>
             <Text className="text-base text-slate-300">
-              Smart Solar Energy Management
+              Manage your solar energy wisely
             </Text>
           </View>
 
           {/* Input Card */}
-          <View className="bg-white/10 rounded-2xl mt-10 p-6 mb-8 backdrop-blur-sm border border-white/20 shadow-lg shadow-black/40">
-            <Text className="text-xl font-semibold text-white text-center mb-4">
+          <View className="bg-white/15 rounded-2xl mt-20 p-6 mb-8 backdrop-blur-sm border border-white/20 shadow-lg shadow-black/40">
+            <Text className="text-2xl font-semibold text-white text-center mb-4">
               Battery Duration Calculator
             </Text>
-            <Text className="text-sm text-slate-300 text-center mb-6 leading-5">
+            <Text className="text-xs text-slate-300 text-center pb-2 mb-6 leading-5">
               Optimize your solar system by specifying how many hours you need
               your battery to last during low sunlight periods.
             </Text>
@@ -260,23 +386,32 @@ export default function SolarMonitoringApp() {
               </Text>
             </View>
 
-            {/* Button */}
+            <View className="flex-row items-center gap-3 w-full">
+              {/* Button */}
             <TouchableOpacity
-              className="bg-emerald-500 rounded-xl p-4 items-center active:opacity-80"
+              className="bg-lime-600 w-10/12 justify-center rounded-xl p-4 items-center flex-row active:opacity-80"
               onPress={() => {
                 handleSubmit();
                 setCurrentWorkingHours(hours);
               }}
               disabled={loadingStats}
             >
-              <Text className="text-white font-semibold text-base">
-                {loadingStats ? "Calculating..." : "Calculate Recommendation"}
+              <Text className="text-white text-center font-semibold text-base">
+                {loadingStats ? "Calculating..." : "Calculate"}
               </Text>
+              {/* Floating Reset Button */}
             </TouchableOpacity>
+            <TouchableOpacity
+                onPress={handleReset}
+                className="w-10 h-10 bg-blue-500 rounded-full items-center justify-center "
+              >
+                <MaterialCommunityIcons name="restart" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
 
             {/* Result */}
             {submitted && (
-              <View className="mt-6 bg-emerald-500/20 rounded-xl p-4 border border-emerald-500/30">
+              <View className="mt-6 bg-lime-500/20 rounded-xl p-4 border border-lime-500/30">
                 <Text className="text-white text-sm text-center">
                   Configuring system for {currentWorkingHours} hours of backup power. Battery
                   capacity will be optimized accordingly.
@@ -289,12 +424,12 @@ export default function SolarMonitoringApp() {
           {loadingStats ? (
             <View className="bg-white/10 rounded-xl p-6 items-center justify-center h-[120px]">
               <ActivityIndicator size="large" color="#4ADE80" />
-              <Text className="text-emerald-500 font-medium mt-2">
+              <Text className="text-lime-500 font-medium mt-2">
                 Analyzing solar performance...
               </Text>
             </View>
           ) : (
-            <View>
+            <View className="mb-8">
               <View className="flex-row justify-between">
                 <View className="bg-white/10 rounded-xl p-3 flex-1 mr-2 items-center border border-white/20">
                   <Text className="text-xl font-bold text-white">
@@ -305,50 +440,79 @@ export default function SolarMonitoringApp() {
                   </Text>
                 </View>
 
+                <View className="bg-white/10 rounded-xl p-3 flex-1 mr-2 items-center border border-white/20">
+                  <Text className="text-xl font-bold text-white">
+                    {stats.remaining_percent === 0 ? "10" : stats.remaining_percent }%
+                  </Text>
+                  <Text className="text-slate-300 text-xs">
+                    Battery
+                  </Text>
+                </View>
+
                 <View
                   className={`${modeColor} rounded-xl p-3 flex-1 mr-2 items-center border border-white/20`}
                 >
-                  <Text className="text-lg font-bold text-white">
-                    {stats.mode === "Go" ? "Healthy" : stats.mode === "WARN" ? "System Alert" : "Battery Depleted"}
+                  <Text className="text-sm text-center font-bold text-white">
+                    {stats.mode === "GO" || stats.mode === "IDLE`" ? "Healthy" : stats.mode === "WARN" ? "System Alert" : "Low"}
                   </Text>
                   <Text className="text-slate-300 text-xs">Mode</Text>
                 </View>
               </View>
-
-              <TouchableOpacity
-                onPress={handleReset}
-                className="bg-blue-500 rounded-xl p-4 items-center mt-4 active:opacity-80"
-              >
-                <Text className="text-white font-semibold text-base">
-                  Reset System
-                </Text>
-              </TouchableOpacity>
-
-              <View className="bg-white/10 mt-8 rounded-2xl p-4 border border-white/20">
-                <Text className="text-white font-medium text-center mb-3">
-                  Energy Distribution
-                </Text>
-                <PieChart
-                  data={statsData}
-                  width={Dimensions.get("window").width - 40}
-                  height={150}
-                  chartConfig={{
-                    color: (opacity = 1) => `rgba(255,255,255,${opacity})`,
-                    labelColor: (opacity = 1) =>
-                      `rgba(255,255,255,${opacity})`,
-                  }}
-                  accessor="population"
-                  backgroundColor="transparent"
-                  paddingLeft="15"
-                  absolute
-                />
-              </View>
             </View>
           )}
 
+          {/* Solar Power Output Bar */}
+          <View className="bg-white/10 mb-8 rounded-xl p-4 border border-white/20">
+            <Text className="text-white text-sm mb-2 font-semibold">
+              Solar Power Output
+            </Text>
+
+            {/* Power Bar */}
+            <View className="h-4 w-full bg-white/10 rounded-full overflow-hidden">
+              <Animated.View
+                style={{
+                  width: animatedWidth.interpolate({
+                    inputRange: [0, 100],
+                    outputRange: ["0%", "100%"],
+                  }),
+                  backgroundColor:
+                    stats.mode === "GO" || stats.mode === "IDLE"
+                      ? "#9ACD32" // Green: Optimal power flow
+                      : stats.mode === "WARN"
+                      ? "#EAB308" // Yellow: Unstable
+                      : "#EF4444", // Red: Low / Empty
+                }}
+                className="h-full rounded-full"
+              />
+            </View>
+
+            {/* Value & Description */}
+            <View className="flex-row justify-between mt-2">
+              <Text className="text-slate-300 text-xs">
+                {/* {(solarKw / 1000).toFixed(2)} kW */}
+                {maxKw} kW
+              </Text>
+              <Text
+                className={`text-xs font-semibold ${
+                  stats.mode === "GO" || stats.mode === "IDLE"
+                    ? "text-lime-400"
+                    : stats.mode === "WARN"
+                    ? "text-amber-400"
+                    : "text-rose-400"
+                }`}
+              >
+                {stats.mode === "GO" || stats.mode === "IDLE"
+                  ? "Optimal"
+                  : stats.mode === "WARN"
+                  ? "Fluctuating"
+                  : "Low Power"}
+              </Text>
+            </View>
+          </View>
+
           {/* Footer */}
           <Text
-            className="text-slate-500 text-xs text-center mt-8"
+            className="text-slate-500 text-xs text-center"
             style={{ paddingBottom: insets.bottom + 50 }}
           >
             © 2023 Solar Flow - Real-time Solar Analytics
